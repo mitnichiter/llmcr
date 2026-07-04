@@ -35,3 +35,6 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# Local-only council room project (lives in its own independent Git repository)
+/thecouncil/

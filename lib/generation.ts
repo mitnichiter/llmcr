@@ -36,14 +36,46 @@ export async function generateResponse(persona: Persona, chatHistory: ChatMessag
     content: `${persona.system_prompt}\n\nMemories:\n${persona.memory_md || ''}\n\n${instruction}`
   });
 
-  const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+  // Dynamic Multi-Provider Routing & Auto-Correction Fallback
+  let provider = persona.provider || 'mistral';
+  let model = persona.model_name || 'mistral-medium-latest';
+
+  // If the model contains a slash (e.g. "nvidia/...", "mistralai/...") but provider is 'mistral',
+  // we auto-correct the provider to openrouter (or nvidia) because Mistral's native API has no slashes.
+  if (provider === 'mistral' && model.includes('/')) {
+    if (model.startsWith('meta/') || model.startsWith('nvidia/')) {
+      provider = 'nvidia';
+    } else {
+      provider = 'openrouter';
+    }
+  }
+
+  // Auto-correct/fallback models for NVIDIA NIM API tier accessibility (e.g., 340B model returns 404 on free tier)
+  if (provider === 'nvidia') {
+    if (model === 'nvidia/nemotron-4-340b-instruct') {
+      model = 'meta/llama-3.1-70b-instruct';
+    }
+  }
+
+  let url = 'https://api.mistral.ai/v1/chat/completions';
+  let token = process.env.MISTRAL_API_KEY;
+
+  if (provider === 'nvidia') {
+    url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    token = process.env.NVIDIA_API_KEY;
+  } else if (provider === 'openrouter') {
+    url = 'https://openrouter.ai/api/v1/chat/completions';
+    token = process.env.OPENROUTER_API_KEY;
+  }
+
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: persona.model_name || 'mistral-medium-latest',
+      model,
       messages,
       stream: true
     })
@@ -51,11 +83,11 @@ export async function generateResponse(persona: Persona, chatHistory: ChatMessag
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Mistral API Error: ${res.status} ${errText}`);
+    throw new Error(`${provider.toUpperCase()} API Error: ${res.status} ${errText}`);
   }
   
   if (!res.body) {
-    throw new Error("Mistral Response body is null");
+    throw new Error(`${provider.toUpperCase()} Response body is null`);
   }
   
   return res.body;

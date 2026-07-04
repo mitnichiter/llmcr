@@ -1,0 +1,5 @@
+thecouncil/
+thecouncil/**
+.next/
+node_modules/
+.env.local
